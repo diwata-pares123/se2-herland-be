@@ -1,58 +1,85 @@
-import { Injectable, BadRequestException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { AddEntryDto } from './dto/add-entry.dto';
 import { PaymentStatus, ServiceStatus } from '@prisma/client';
 
 @Injectable()
 export class ReportsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async createEntry(dto: AddEntryDto) {
-    // 1. Look up the service from your dropdown options
-    const service = await this.prisma.service.findFirst({
-      where: { name: dto.serviceName },
-    });
-
-    if (!service) {
-      throw new BadRequestException(`Service '${dto.serviceName}' not found in the database. Please make sure it exists.`);
-    }
-
-    // 2. Set Payment Status (If they picked Cash/GCash/Card, it is PAID)
-    const currentPaymentStatus = dto.paymentMethod ? PaymentStatus.PAID : PaymentStatus.UNPAID;
-
-    // 3. Generate a quick unique Invoice Number (e.g., INV-837492)
-    const invoiceString = `INV-${Math.floor(100000 + Math.random() * 900000)}`;
-
-    // 4. Save to Database using Prisma
-    const newTransaction = await this.prisma.transaction.create({
-      data: {
-        invoiceNumber: invoiceString,
-        customerName: dto.customerName,
-        totalAmount: dto.amount,
-        transactionDate: new Date(dto.transactionDate),
-        paymentMethod: dto.paymentMethod,
-        paymentStatus: currentPaymentStatus,
-        serviceStatus: ServiceStatus.ON_GOING, // Default status for new entries
-        
-        // This links the specific service to the transaction
-        items: {
-          create: [
-            {
-              serviceId: service.id,
-              quantity: 1, 
-              priceAtTime: dto.amount, 
-            }
-          ]
-        }
-      },
-      // Return the created data along with the service details
+  async getDashboardSummary() {
+    // 1. Fetch all non-deleted transactions, including the service details
+    const transactions = await this.prisma.transaction.findMany({
+      where: { isDeleted: false },
       include: {
         items: {
-          include: { service: true }
+          include: { service: true },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    // 2. Separate them into the buckets your UI tabs need
+    const unpaidTransactions = transactions.filter((t) => t.paymentStatus === PaymentStatus.UNPAID);
+    const paidTransactions = transactions.filter((t) => t.paymentStatus === PaymentStatus.PAID);
+    const claimedTransactions = transactions.filter((t) => t.serviceStatus === ServiceStatus.CLAIMED);
+
+    // 3. Calculate Totals for the bottom of the tables
+    const totalUnpaidAmount = unpaidTransactions.reduce((sum, t) => sum + t.totalAmount, 0);
+    const totalPaidAmount = paidTransactions.reduce((sum, t) => sum + t.totalAmount, 0);
+    const totalClaimedAmount = claimedTransactions.reduce((sum, t) => sum + t.totalAmount, 0);
+
+    // 4. Build the Graph Data (Grouping by Month)
+    // We will initialize the first three months to match your UI placeholder
+    const graphData = {
+      Jan: { count: 0, revenue: 0 },
+      Feb: { count: 0, revenue: 0 },
+      March: { count: 0, revenue: 0 }, // Exact spelling from your UI
+      // You can add more months here later!
+    };
+
+    // Map JavaScript month numbers (0-11) perfectly to your UI labels
+    const monthLabels = [
+      "Jan", "Feb", "March", "Apr", "May", "Jun", 
+      "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
+    ];
+
+    transactions.forEach((t) => {
+      // t.createdAt.getMonth() returns an index (e.g., 2 for March)
+      // This forces the backend to use your UI's exact spelling ("March")
+      const monthName = monthLabels[t.createdAt.getMonth()];
+      
+      // If the month exists in our graphData object, add to it
+      if (graphData[monthName]) {
+        graphData[monthName].count += 1; // For your 0-120 graph
+        
+        // Only count paid revenue for the money graph
+        if (t.paymentStatus === PaymentStatus.PAID) {
+           graphData[monthName].revenue += t.totalAmount;
         }
       }
     });
 
-    return newTransaction;
+    // 5. Send the perfectly formatted JSON to the frontend
+    return {
+      overview: {
+        totalSalesAmount: totalPaidAmount,
+        totalCustomers: transactions.length, // Can represent "New Customers" count for now
+      },
+      graphData: graphData,
+      salesReportTabs: {
+        unpaid: {
+          totalAmount: totalUnpaidAmount,
+          entries: unpaidTransactions,
+        },
+        paid: {
+          totalAmount: totalPaidAmount,
+          entries: paidTransactions,
+        },
+        claimed: {
+          totalAmount: totalClaimedAmount,
+          entries: claimedTransactions,
+        },
+      },
+    };
   }
 }
