@@ -25,7 +25,8 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
       await this.$connect();
       console.log('🚀 SUCCESS: Database connected via Prisma 7 Adapter!');
     } catch (err) {
-      console.error('❌ CONNECTION ERROR:', err.message);
+      // FIX: Tell TypeScript to treat 'err' as a standard Error object
+      console.error('❌ CONNECTION ERROR:', (err as Error).message);
     }
   }
 

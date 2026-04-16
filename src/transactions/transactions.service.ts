@@ -1,4 +1,4 @@
-import { Injectable, BadRequestException } from '@nestjs/common';
+import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
 import { CreateTransactionDto } from './dto/create-transaction.dto';
 import { UpdateTransactionDto } from './dto/update-transaction.dto';
 import { PrismaService } from '../prisma/prisma.service';
@@ -79,15 +79,51 @@ export class TransactionsService {
     };
   }
 
-  findOne(id: string) {
-    return `This action returns a #${id} transaction`;
+  async findOne(id: string) {
+    const transaction = await this.prisma.transaction.findUnique({
+      where: { id: id },
+      include: {
+        items: { include: { service: true } }
+      }
+    });
+
+    if (!transaction || transaction.isDeleted) {
+      throw new NotFoundException(`Transaction #${id} not found or has been deleted.`);
+    }
+
+    return transaction;
   }
 
-  update(id: string, updateTransactionDto: UpdateTransactionDto) {
-    return `This action updates a #${id} transaction`;
+  async update(id: string, updateTransactionDto: UpdateTransactionDto) {
+    try {
+      // This will automatically apply any fields sent from the frontend 
+      // (like { paymentStatus: "PAID" } or { serviceStatus: "CLAIMED" })
+      const updatedTransaction = await this.prisma.transaction.update({
+        where: { id: id },
+        data: updateTransactionDto,
+        include: {
+          items: { include: { service: true } }
+        }
+      });
+      
+      return updatedTransaction;
+    } catch (error) {
+      throw new NotFoundException(`Failed to update. Transaction #${id} not found.`);
+    }
   }
 
-  remove(id: string) {
-    return `This action removes a #${id} transaction`;
+  async remove(id: string) {
+    try {
+      // SOFT DELETE: Business rule dictates we cannot permanently delete records.
+      // We just hide it by setting isDeleted to true.
+      const deletedTransaction = await this.prisma.transaction.update({
+        where: { id: id },
+        data: { isDeleted: true }, 
+      });
+
+      return { message: `Transaction #${id} has been successfully voided/deleted.`, id: deletedTransaction.id };
+    } catch (error) {
+      throw new NotFoundException(`Failed to delete. Transaction #${id} not found.`);
+    }
   }
 }

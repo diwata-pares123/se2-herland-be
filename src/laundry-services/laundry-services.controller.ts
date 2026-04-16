@@ -19,16 +19,16 @@ export class LaundryServicesController {
 
   @Get(':id')
   findOne(@Param('id') id: string) {
-    return this.laundryServicesService.findOne(+id);
+    return this.laundryServicesService.findOne(id); // <-- Removed the +
   }
 
   @Patch(':id')
   update(@Param('id') id: string, @Body() updateLaundryServiceDto: UpdateLaundryServiceDto) {
-    return this.laundryServicesService.update(+id, updateLaundryServiceDto);
+    return this.laundryServicesService.update(id, updateLaundryServiceDto); // <-- Removed the +
   }
 
   @Delete(':id')
   remove(@Param('id') id: string) {
-    return this.laundryServicesService.remove(+id);
+    return this.laundryServicesService.remove(id); // <-- Removed the +
   }
 }

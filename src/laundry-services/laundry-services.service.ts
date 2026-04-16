@@ -1,26 +1,58 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { CreateLaundryServiceDto } from './dto/create-laundry-service.dto';
 import { UpdateLaundryServiceDto } from './dto/update-laundry-service.dto';
+import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
 export class LaundryServicesService {
-  create(createLaundryServiceDto: CreateLaundryServiceDto) {
-    return 'This action adds a new laundryService';
+  constructor(private readonly prisma: PrismaService) {}
+
+  async create(dto: CreateLaundryServiceDto) {
+    return await this.prisma.service.create({
+      data: {
+        name: dto.name,
+        price: dto.price,
+      },
+    });
   }
 
-  findAll() {
-    return `This action returns all laundryServices`;
+  async findAll() {
+    // We return them in alphabetical order so the frontend dropdown is organized
+    return await this.prisma.service.findMany({
+      orderBy: { name: 'asc' }
+    });
   }
 
-  findOne(id: number) {
-    return `This action returns a #${id} laundryService`;
+  async findOne(id: string) {
+    const service = await this.prisma.service.findUnique({
+      where: { id: id }
+    });
+
+    if (!service) {
+      throw new NotFoundException(`Service #${id} not found`);
+    }
+
+    return service;
   }
 
-  update(id: number, updateLaundryServiceDto: UpdateLaundryServiceDto) {
-    return `This action updates a #${id} laundryService`;
+  async update(id: string, dto: UpdateLaundryServiceDto) {
+    try {
+      return await this.prisma.service.update({
+        where: { id: id },
+        data: dto,
+      });
+    } catch (error) {
+      throw new NotFoundException(`Failed to update. Service #${id} not found.`);
+    }
   }
 
-  remove(id: number) {
-    return `This action removes a #${id} laundryService`;
+  async remove(id: string) {
+    try {
+      return await this.prisma.service.delete({
+        where: { id: id },
+      });
+    } catch (error) {
+      throw new NotFoundException(`Failed to delete. Service #${id} might be linked to existing transactions.`);
+    }
   }
 }
