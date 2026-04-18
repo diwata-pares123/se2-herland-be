@@ -1,5 +1,5 @@
 import { IsString, IsNotEmpty, IsNumber, IsDateString, IsOptional, IsIn } from 'class-validator';
-import { PaymentStatus } from '@prisma/client'; // <-- Added import
+import { PaymentStatus, ServiceStatus } from '@prisma/client'; // <-- Added ServiceStatus
 
 export class CreateTransactionDto {
   @IsString()
@@ -18,13 +18,14 @@ export class CreateTransactionDto {
   @IsNotEmpty()
   transactionDate!: string;
 
-  // 1. @IsOptional() allows the frontend to skip this for UNPAID entries
-  // 2. @IsIn() strictly limits it to CASH or GCASH (CARD is officially gone!)
   @IsOptional()
   @IsIn(['CASH', 'GCASH'])
   paymentMethod?: 'CASH' | 'GCASH';
 
-  // <-- FIX APPLIED: Allow frontend to explicitly send the status
   @IsOptional()
   paymentStatus?: PaymentStatus; 
+
+  // <-- FIX: Add this so NestJS doesn't strip it out!
+  @IsOptional()
+  serviceStatus?: ServiceStatus; 
 }

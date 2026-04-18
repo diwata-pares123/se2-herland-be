@@ -18,10 +18,9 @@ export class TransactionsService {
       throw new BadRequestException(`Service '${dto.serviceName}' not found in the database. Please make sure it exists.`);
     }
 
-    // <-- FIX APPLIED: Use explicit status if sent, otherwise fallback to checking paymentMethod
     const currentPaymentStatus = dto.paymentStatus || (dto.paymentMethod ? PaymentStatus.PAID : PaymentStatus.UNPAID);
 
-    // 3. Generate Invoice Number
+    // 3. Generate Invoice Number (Backend handles this, frontend doesn't need to!)
     const invoiceString = `INV-${Math.floor(100000 + Math.random() * 900000)}`;
 
     // 4. Save to Database using Prisma
@@ -33,7 +32,9 @@ export class TransactionsService {
         transactionDate: new Date(dto.transactionDate),
         paymentMethod: dto.paymentMethod,
         paymentStatus: currentPaymentStatus,
-        serviceStatus: ServiceStatus.ON_GOING,
+        
+        // <-- FIX: Use what the frontend sent, or fallback to ON_GOING
+        serviceStatus: dto.serviceStatus || ServiceStatus.ON_GOING,
         
         items: {
           create: [
