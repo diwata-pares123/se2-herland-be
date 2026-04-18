@@ -1,25 +1,30 @@
 import { IsString, IsNotEmpty, IsNumber, IsDateString, IsOptional, IsIn } from 'class-validator';
+import { PaymentStatus } from '@prisma/client'; // <-- Added import
 
 export class CreateTransactionDto {
   @IsString()
   @IsNotEmpty()
-  customerName: string;
+  customerName!: string;
 
   @IsString()
   @IsNotEmpty()
-  serviceName: string;
+  serviceName!: string;
 
   @IsNumber()
   @IsNotEmpty()
-  amount: number;
+  amount!: number;
 
   @IsDateString()
   @IsNotEmpty()
-  transactionDate: string;
+  transactionDate!: string;
 
   // 1. @IsOptional() allows the frontend to skip this for UNPAID entries
   // 2. @IsIn() strictly limits it to CASH or GCASH (CARD is officially gone!)
   @IsOptional()
   @IsIn(['CASH', 'GCASH'])
   paymentMethod?: 'CASH' | 'GCASH';
+
+  // <-- FIX APPLIED: Allow frontend to explicitly send the status
+  @IsOptional()
+  paymentStatus?: PaymentStatus; 
 }

@@ -18,8 +18,8 @@ export class TransactionsService {
       throw new BadRequestException(`Service '${dto.serviceName}' not found in the database. Please make sure it exists.`);
     }
 
-    // 2. Set Payment Status automatically
-    const currentPaymentStatus = dto.paymentMethod ? PaymentStatus.PAID : PaymentStatus.UNPAID;
+    // <-- FIX APPLIED: Use explicit status if sent, otherwise fallback to checking paymentMethod
+    const currentPaymentStatus = dto.paymentStatus || (dto.paymentMethod ? PaymentStatus.PAID : PaymentStatus.UNPAID);
 
     // 3. Generate Invoice Number
     const invoiceString = `INV-${Math.floor(100000 + Math.random() * 900000)}`;
@@ -58,7 +58,7 @@ export class TransactionsService {
   async findAll() {
     // Fetch all non-deleted transactions for the Sales Report
     const transactions = await this.prisma.transaction.findMany({
-      where: { isDeleted: false },
+      where: { isDeleted: false }, // You can leave this as-is; it won't hurt hard-deleted items
       include: {
         items: { include: { service: true } },
       },
@@ -114,14 +114,18 @@ export class TransactionsService {
 
   async remove(id: string) {
     try {
-      // SOFT DELETE: Business rule dictates we cannot permanently delete records.
-      // We just hide it by setting isDeleted to true.
-      const deletedTransaction = await this.prisma.transaction.update({
-        where: { id: id },
-        data: { isDeleted: true }, 
+      // <-- FIX APPLIED: HARD DELETE
+      // 1. Delete associated items first to avoid Foreign Key constraint errors
+      await this.prisma.transactionItem.deleteMany({
+        where: { transactionId: id },
       });
 
-      return { message: `Transaction #${id} has been successfully voided/deleted.`, id: deletedTransaction.id };
+      // 2. Actually delete the Transaction from Supabase/PostgreSQL
+      const deletedTransaction = await this.prisma.transaction.delete({
+        where: { id: id },
+      });
+
+      return { message: `Transaction #${id} has been permanently deleted.`, id: deletedTransaction.id };
     } catch (error) {
       throw new NotFoundException(`Failed to delete. Transaction #${id} not found.`);
     }
