@@ -108,3 +108,24 @@ model TransactionItem {
   serviceId     String
   service       Service     @relation(fields: [serviceId], references: [id])
 }
+
+
+// ==========================================
+// --- NEW MODELS FOR NOTIFICATIONS SYSTEM ---
+// ==========================================
+
+enum NotificationType {
+  info
+  success
+  warning
+  error
+}
+
+model Notification {
+  id          String           @id @default(uuid())
+  title       String
+  message     String
+  isRead      Boolean          @default(false)
+  type        NotificationType @default(info)
+  timestamp   DateTime         @default(now())
+}

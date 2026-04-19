@@ -9,21 +9,17 @@ export class TransactionsService {
   constructor(private readonly prisma: PrismaService) {}
 
   async create(dto: CreateTransactionDto) {
-    // 1. Look up the service from your dropdown options
     const service = await this.prisma.service.findFirst({
       where: { name: dto.serviceName },
     });
 
     if (!service) {
-      throw new BadRequestException(`Service '${dto.serviceName}' not found in the database. Please make sure it exists.`);
+      throw new BadRequestException(`Service '${dto.serviceName}' not found.`);
     }
 
     const currentPaymentStatus = dto.paymentStatus || (dto.paymentMethod ? PaymentStatus.PAID : PaymentStatus.UNPAID);
-
-    // 3. Generate Invoice Number (Backend handles this, frontend doesn't need to!)
     const invoiceString = `INV-${Math.floor(100000 + Math.random() * 900000)}`;
 
-    // 4. Save to Database using Prisma
     const newTransaction = await this.prisma.transaction.create({
       data: {
         invoiceNumber: invoiceString,
@@ -32,10 +28,7 @@ export class TransactionsService {
         transactionDate: new Date(dto.transactionDate),
         paymentMethod: dto.paymentMethod,
         paymentStatus: currentPaymentStatus,
-        
-        // <-- FIX: Use what the frontend sent, or fallback to ON_GOING
         serviceStatus: dto.serviceStatus || ServiceStatus.ON_GOING,
-        
         items: {
           create: [
             {
@@ -53,20 +46,27 @@ export class TransactionsService {
       }
     });
 
+    // --- NEW: LOG NOTIFICATION FOR NEW ENTRY ---
+    await this.prisma.notification.create({
+      data: {
+        title: "New Order Received",
+        message: `${dto.customerName} placed a new order for ${dto.serviceName}.`,
+        type: "info"
+      }
+    });
+
     return newTransaction;
   }
 
   async findAll() {
-    // Fetch all non-deleted transactions for the Sales Report
     const transactions = await this.prisma.transaction.findMany({
-      where: { isDeleted: false }, // You can leave this as-is; it won't hurt hard-deleted items
+      where: { isDeleted: false }, 
       include: {
         items: { include: { service: true } },
       },
       orderBy: { createdAt: 'desc' },
     });
 
-    // Calculate total revenue from PAID transactions
     const totalRevenue = transactions
       .filter((t) => t.paymentStatus === 'PAID')
       .reduce((sum, t) => sum + t.totalAmount, 0);
@@ -89,46 +89,96 @@ export class TransactionsService {
     });
 
     if (!transaction || transaction.isDeleted) {
-      throw new NotFoundException(`Transaction #${id} not found or has been deleted.`);
+      throw new NotFoundException(`Transaction #${id} not found or deleted.`);
     }
 
     return transaction;
   }
 
-  async update(id: string, updateTransactionDto: UpdateTransactionDto) {
-    try {
-      // This will automatically apply any fields sent from the frontend 
-      // (like { paymentStatus: "PAID" } or { serviceStatus: "CLAIMED" })
-      const updatedTransaction = await this.prisma.transaction.update({
-        where: { id: id },
-        data: updateTransactionDto,
-        include: {
-          items: { include: { service: true } }
-        }
-      });
-      
-      return updatedTransaction;
-    } catch (error) {
+  async update(id: string, dto: any) {
+    // Kukunin muna natin ang lumang data para ma-compare mamaya sa Notification
+    const existingTransaction = await this.prisma.transaction.findUnique({ where: { id } });
+    
+    if (!existingTransaction) {
       throw new NotFoundException(`Failed to update. Transaction #${id} not found.`);
     }
+
+    // --- FIX: MANUALLY MAP DATA PARA HINDI MAG-ERROR SA PRISMA ---
+    const updateData: any = {};
+    if (dto.customerName) updateData.customerName = dto.customerName;
+    if (dto.amount) updateData.totalAmount = dto.amount; // Mapped 'amount' to 'totalAmount'
+    if (dto.paymentMethod) updateData.paymentMethod = dto.paymentMethod;
+    if (dto.paymentStatus) updateData.paymentStatus = dto.paymentStatus;
+    if (dto.serviceStatus) updateData.serviceStatus = dto.serviceStatus;
+    if (dto.transactionDate) updateData.transactionDate = new Date(dto.transactionDate);
+
+    const updatedTransaction = await this.prisma.transaction.update({
+      where: { id: id },
+      data: updateData,
+      include: {
+        items: { include: { service: true } }
+      }
+    });
+
+    // --- LOG NOTIFICATIONS FOR STATUS CHANGES ---
+    if (existingTransaction.paymentStatus !== 'PAID' && updatedTransaction.paymentStatus === 'PAID') {
+      await this.prisma.notification.create({
+        data: {
+          title: "Payment Received",
+          message: `Payment received from ${updatedTransaction.customerName}.`,
+          type: "success"
+        }
+      });
+    }
+
+    if (existingTransaction.serviceStatus !== 'CLAIMED' && updatedTransaction.serviceStatus === 'CLAIMED') {
+      await this.prisma.notification.create({
+        data: {
+          title: "Order Claimed",
+          message: `Order ${updatedTransaction.invoiceNumber} for ${updatedTransaction.customerName} has been claimed.`,
+          type: "success"
+        }
+      });
+    }
+
+    // --- ADDED: LOG NOTIFICATION FOR CANCELLED STATUS ---
+    if (existingTransaction.serviceStatus !== 'CANCELLED' && updatedTransaction.serviceStatus === 'CANCELLED') {
+      await this.prisma.notification.create({
+        data: {
+          title: "Order Cancelled",
+          message: `Order ${updatedTransaction.invoiceNumber} for ${updatedTransaction.customerName} has been cancelled.`,
+          type: "error"
+        }
+      });
+    }
+
+    return updatedTransaction;
   }
 
   async remove(id: string) {
-    try {
-      // <-- FIX APPLIED: HARD DELETE
-      // 1. Delete associated items first to avoid Foreign Key constraint errors
-      await this.prisma.transactionItem.deleteMany({
-        where: { transactionId: id },
-      });
+    const existingTransaction = await this.prisma.transaction.findUnique({ where: { id } });
 
-      // 2. Actually delete the Transaction from Supabase/PostgreSQL
-      const deletedTransaction = await this.prisma.transaction.delete({
-        where: { id: id },
-      });
-
-      return { message: `Transaction #${id} has been permanently deleted.`, id: deletedTransaction.id };
-    } catch (error) {
+    if (!existingTransaction) {
       throw new NotFoundException(`Failed to delete. Transaction #${id} not found.`);
     }
+
+    await this.prisma.transactionItem.deleteMany({
+      where: { transactionId: id },
+    });
+
+    const deletedTransaction = await this.prisma.transaction.delete({
+      where: { id: id },
+    });
+
+    // --- NEW: LOG NOTIFICATION FOR DELETED ENTRY ---
+    await this.prisma.notification.create({
+      data: {
+        title: "Order Deleted",
+        message: `Order ${existingTransaction.invoiceNumber} for ${existingTransaction.customerName} was deleted.`,
+        type: "error"
+      }
+    });
+
+    return { message: `Transaction #${id} has been permanently deleted.`, id: deletedTransaction.id };
   }
 }
