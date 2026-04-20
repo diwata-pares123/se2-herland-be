@@ -3,16 +3,16 @@ import { Role } from '@prisma/client';
 
 export class CreateUserDto {
   @IsEmail({}, { message: 'Please provide a valid email address' })
-  email: string;
+  email!: string; // <-- Nilagyan natin ng '!'
 
   @IsString()
   @IsNotEmpty()
   @MinLength(6, { message: 'Password must be at least 6 characters long' })
-  password: string;
+  password!: string; // <-- Nilagyan natin ng '!'
 
   @IsString()
   @IsNotEmpty()
-  name: string;
+  name!: string; // <-- Nilagyan natin ng '!'
 
   @IsOptional()
   @IsString()

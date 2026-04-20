@@ -2,7 +2,7 @@ import { Injectable, ConflictException, UnauthorizedException, NotFoundException
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateUserDto } from '../users/dto/create-user.dto';
 import { LoginDto } from '../users/dto/log-in.dto';
-import { ResetPasswordDto } from '../users/dto/new-password.dto'; // <-- NEW IMPORT
+import { ResetPasswordDto } from '../users/dto/new-password.dto';
 import * as bcrypt from 'bcrypt';
 import { JwtService } from '@nestjs/jwt';
 
@@ -97,7 +97,7 @@ export class AuthService {
     };
   }
 
-  // --- NEW: FORGOT PASSWORD (Generate Reset Code) ---
+  // --- 3. FORGOT PASSWORD (Generate Reset Code) ---
   async forgotPassword(email: string) {
     const user = await this.prisma.user.findUnique({ where: { email } });
     if (!user) throw new NotFoundException('User not found');
@@ -121,8 +121,7 @@ export class AuthService {
     return { message: 'Reset code sent successfully' };
   }
 
-  // --- NEW: RESET PASSWORD (Verify Code & Update Password) ---
-  // Changed 'any' to ResetPasswordDto
+  // --- 4. RESET PASSWORD (Verify Code & Update Password) ---
   async resetPassword(resetDto: ResetPasswordDto) {
     const { email, code, newPassword } = resetDto;
 
@@ -133,7 +132,7 @@ export class AuthService {
       throw new UnauthorizedException('Invalid reset code');
     }
 
-    // UPDATED LINE: Check if expires exists AND if it's in the past
+    // Check if expires exists AND if it's in the past
     if (!user.resetPasswordExpires || new Date() > user.resetPasswordExpires) {
       throw new UnauthorizedException('Reset code has expired');
     }
@@ -150,5 +149,19 @@ export class AuthService {
     });
 
     return { message: 'Password reset successful' };
+  }
+
+  // --- NEW: GET PROFILE (For logged-in users) ---
+  async getProfile(userId: string) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    // Tanggalin ang mga sensitive data bago i-return para secure
+    const { password, twoFactorSecret, resetPasswordToken, resetPasswordExpires, ...safeUser } = user;
+    
+    return safeUser;
   }
 }
