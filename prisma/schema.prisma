@@ -52,8 +52,11 @@ model User {
   createdAt            DateTime  @default(now())
   updatedAt            DateTime  @updatedAt
 
-  // NEW: This tells Prisma that a User (Staff) can process many transactions
+  // This tells Prisma that a User (Staff) can process many transactions
   transactions         Transaction[]
+  
+  // ---> NEW: KONEKSYON PARA SA NOTIFICATION SETTINGS (Ito ang fix sa P1012 Error) <---
+  notificationSettings NotificationSettings?
 }
 
 // --- NEW MODELS FOR LAUNDRY SYSTEM ---
@@ -67,38 +70,38 @@ model Service {
 }
 
 model Transaction {
-  id              String   @id @default(uuid())
-  invoiceNumber   String   @unique // e.g., "T04", "T05"
-  customerName    String   // From your Add Entry modal
+  id            String        @id @default(uuid())
+  invoiceNumber String        @unique // e.g., "T04", "T05"
+  customerName  String        // From your Add Entry modal
   
   // Statuses
-  paymentStatus   PaymentStatus @default(UNPAID)
-  serviceStatus   ServiceStatus @default(ON_GOING)
-  paymentMethod   PaymentMethod? // Optional if unpaid
+  paymentStatus PaymentStatus @default(UNPAID)
+  serviceStatus ServiceStatus @default(ON_GOING)
+  paymentMethod PaymentMethod? // Optional if unpaid
   
-  totalAmount     Float    @default(0) // Total from the modal
+  totalAmount   Float         @default(0) // Total from the modal
   
   // Dates
   transactionDate DateTime // The Date picked in the modal
   claimDate       DateTime? // Logs when claimed
-  createdAt       DateTime @default(now()) 
-  updatedAt       DateTime @updatedAt
+  createdAt       DateTime      @default(now()) 
+  updatedAt       DateTime      @updatedAt
 
   // Soft Delete (Satisfies the "Prevents permanent deletion" rule)
-  isDeleted       Boolean  @default(false) 
+  isDeleted     Boolean       @default(false) 
 
   // Audit Trail: Link back to the User model
-  userId          String?  
-  user            User?    @relation(fields: [userId], references: [id])
+  userId        String?  
+  user          User?         @relation(fields: [userId], references: [id])
 
   // Items in this transaction
-  items           TransactionItem[]
+  items         TransactionItem[]
 }
 
 model TransactionItem {
-  id            String   @id @default(uuid())
-  quantity      Float    @default(1) // Can be used for Weight (e.g., 3.5 kg)
-  priceAtTime   Float    // Historical price tracking
+  id            String      @id @default(uuid())
+  quantity      Float       @default(1) // Can be used for Weight (e.g., 3.5 kg)
+  priceAtTime   Float       // Historical price tracking
   
   // Link to Transaction
   transactionId String
@@ -108,7 +111,6 @@ model TransactionItem {
   serviceId     String
   service       Service     @relation(fields: [serviceId], references: [id])
 }
-
 
 // ==========================================
 // --- NEW MODELS FOR NOTIFICATIONS SYSTEM ---
@@ -121,6 +123,7 @@ enum NotificationType {
   error
 }
 
+// LEGACY: Hindi ginalaw para ma-preserve ang mga lumang notifications
 model Notification {
   id          String           @id @default(uuid())
   title       String
@@ -128,4 +131,23 @@ model Notification {
   isRead      Boolean          @default(false)
   type        NotificationType @default(info)
   timestamp   DateTime         @default(now())
+}
+
+// NEW: Model para sa preferences/settings ng bawat user
+model NotificationSettings {
+  id                   String  @id 
+  user                 User    @relation(fields: [id], references: [id], onDelete: Cascade)
+  
+  // Alert Types
+  orderUpdates         Boolean @default(true)
+  paymentNotifications Boolean @default(true)
+  newOrders            Boolean @default(true)
+  orderCompletion      Boolean @default(true)
+  lowStock             Boolean @default(true)
+  systemUpdates        Boolean @default(false)
+  
+  // Notification Channels
+  emailNotifications   Boolean @default(true)
+  pushNotifications    Boolean @default(true)
+  smsNotifications     Boolean @default(false)
 }

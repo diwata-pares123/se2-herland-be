@@ -2,13 +2,28 @@ import { Injectable, BadRequestException, NotFoundException } from '@nestjs/comm
 import { CreateTransactionDto } from './dto/create-transaction.dto';
 import { UpdateTransactionDto } from './dto/update-transaction.dto';
 import { PrismaService } from '../prisma/prisma.service';
-import { PaymentStatus, ServiceStatus } from '@prisma/client';
+import { PaymentStatus, ServiceStatus, NotificationSettings } from '@prisma/client';
 
 @Injectable()
 export class TransactionsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async create(dto: CreateTransactionDto) {
+  // =========================================================================
+  // --- UPDATED: HELPER FUNCTION ACCEPTS userId TO CHECK CORRECT SETTINGS ---
+  // =========================================================================
+  private async shouldSendNotification(userId: string, settingKey: keyof NotificationSettings): Promise<boolean> {
+    // Ngayon, kukunin na natin ang settings ng mismong user na naka-login!
+    const settings = await this.prisma.notificationSettings.findUnique({
+      where: { id: userId }
+    });
+    
+    if (!settings) return true; 
+    return settings[settingKey] === true;
+  }
+
+  // =========================================================================
+
+  async create(userId: string, dto: CreateTransactionDto) { // Added userId here
     const service = await this.prisma.service.findFirst({
       where: { name: dto.serviceName },
     });
@@ -46,14 +61,16 @@ export class TransactionsService {
       }
     });
 
-    // --- NEW: LOG NOTIFICATION FOR NEW ENTRY ---
-    await this.prisma.notification.create({
-      data: {
-        title: "New Order Received",
-        message: `${dto.customerName} placed a new order for ${dto.serviceName}.`,
-        type: "info"
-      }
-    });
+    // --- CHECK PREFERENCES BAGO MAG-LOG NG NEW ENTRY ---
+    if (await this.shouldSendNotification(userId, 'newOrders')) {
+      await this.prisma.notification.create({
+        data: {
+          title: "New Order Received",
+          message: `${dto.customerName} placed a new order for ${dto.serviceName}.`,
+          type: "info"
+        }
+      });
+    }
 
     return newTransaction;
   }
@@ -95,18 +112,16 @@ export class TransactionsService {
     return transaction;
   }
 
-  async update(id: string, dto: any) {
-    // Kukunin muna natin ang lumang data para ma-compare mamaya sa Notification
+  async update(id: string, dto: any, userId: string) { // Added userId here
     const existingTransaction = await this.prisma.transaction.findUnique({ where: { id } });
     
     if (!existingTransaction) {
       throw new NotFoundException(`Failed to update. Transaction #${id} not found.`);
     }
 
-    // --- FIX: MANUALLY MAP DATA PARA HINDI MAG-ERROR SA PRISMA ---
     const updateData: any = {};
     if (dto.customerName) updateData.customerName = dto.customerName;
-    if (dto.amount) updateData.totalAmount = dto.amount; // Mapped 'amount' to 'totalAmount'
+    if (dto.amount) updateData.totalAmount = dto.amount; 
     if (dto.paymentMethod) updateData.paymentMethod = dto.paymentMethod;
     if (dto.paymentStatus) updateData.paymentStatus = dto.paymentStatus;
     if (dto.serviceStatus) updateData.serviceStatus = dto.serviceStatus;
@@ -120,42 +135,49 @@ export class TransactionsService {
       }
     });
 
-    // --- LOG NOTIFICATIONS FOR STATUS CHANGES ---
+    // --- CHECK PREFERENCES BAGO MAG-LOG NG PAYMENT ---
     if (existingTransaction.paymentStatus !== 'PAID' && updatedTransaction.paymentStatus === 'PAID') {
-      await this.prisma.notification.create({
-        data: {
-          title: "Payment Received",
-          message: `Payment received from ${updatedTransaction.customerName}.`,
-          type: "success"
-        }
-      });
+      if (await this.shouldSendNotification(userId, 'paymentNotifications')) {
+        await this.prisma.notification.create({
+          data: {
+            title: "Payment Received",
+            message: `Payment received from ${updatedTransaction.customerName}.`,
+            type: "success"
+          }
+        });
+      }
     }
 
+    // --- CHECK PREFERENCES BAGO MAG-LOG NG CLAIMED ---
     if (existingTransaction.serviceStatus !== 'CLAIMED' && updatedTransaction.serviceStatus === 'CLAIMED') {
-      await this.prisma.notification.create({
-        data: {
-          title: "Order Claimed",
-          message: `Order ${updatedTransaction.invoiceNumber} for ${updatedTransaction.customerName} has been claimed.`,
-          type: "success"
-        }
-      });
+      if (await this.shouldSendNotification(userId, 'orderCompletion')) {
+        await this.prisma.notification.create({
+          data: {
+            title: "Order Claimed",
+            message: `Order ${updatedTransaction.invoiceNumber} for ${updatedTransaction.customerName} has been claimed.`,
+            type: "success"
+          }
+        });
+      }
     }
 
-    // --- ADDED: LOG NOTIFICATION FOR CANCELLED STATUS ---
+    // --- CHECK PREFERENCES BAGO MAG-LOG NG CANCELLED ---
     if (existingTransaction.serviceStatus !== 'CANCELLED' && updatedTransaction.serviceStatus === 'CANCELLED') {
-      await this.prisma.notification.create({
-        data: {
-          title: "Order Cancelled",
-          message: `Order ${updatedTransaction.invoiceNumber} for ${updatedTransaction.customerName} has been cancelled.`,
-          type: "error"
-        }
-      });
+      if (await this.shouldSendNotification(userId, 'orderUpdates')) {
+        await this.prisma.notification.create({
+          data: {
+            title: "Order Cancelled",
+            message: `Order ${updatedTransaction.invoiceNumber} for ${updatedTransaction.customerName} has been cancelled.`,
+            type: "error"
+          }
+        });
+      }
     }
 
     return updatedTransaction;
   }
 
-  async remove(id: string) {
+  async remove(id: string, userId: string) { // Added userId here
     const existingTransaction = await this.prisma.transaction.findUnique({ where: { id } });
 
     if (!existingTransaction) {
@@ -170,14 +192,16 @@ export class TransactionsService {
       where: { id: id },
     });
 
-    // --- NEW: LOG NOTIFICATION FOR DELETED ENTRY ---
-    await this.prisma.notification.create({
-      data: {
-        title: "Order Deleted",
-        message: `Order ${existingTransaction.invoiceNumber} for ${existingTransaction.customerName} was deleted.`,
-        type: "error"
-      }
-    });
+    // --- CHECK PREFERENCES BAGO MAG-LOG NG DELETED ENTRY ---
+    if (await this.shouldSendNotification(userId, 'orderUpdates')) {
+      await this.prisma.notification.create({
+        data: {
+          title: "Order Deleted",
+          message: `Order ${existingTransaction.invoiceNumber} for ${existingTransaction.customerName} was deleted.`,
+          type: "error"
+        }
+      });
+    }
 
     return { message: `Transaction #${id} has been permanently deleted.`, id: deletedTransaction.id };
   }

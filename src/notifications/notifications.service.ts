@@ -5,6 +5,9 @@ import { PrismaService } from '../prisma/prisma.service';
 export class NotificationsService {
   constructor(private readonly prisma: PrismaService) {}
 
+  // ==========================================
+  // --- EXISTING LOGIC (Untouched) ---
+  // ==========================================
   async findAll() {
     return this.prisma.notification.findMany({
       orderBy: { timestamp: 'desc' }
@@ -33,5 +36,37 @@ export class NotificationsService {
 
   async clearAll() {
     return this.prisma.notification.deleteMany({});
+  }
+
+  // ==========================================
+  // --- NEW LOGIC FOR NOTIFICATION SETTINGS ---
+  // ==========================================
+
+  async getSettings(userId: string) {
+    // Look for existing settings based on the user's ID
+    let settings = await this.prisma.notificationSettings.findUnique({
+      where: { id: userId },
+    });
+
+    // If none exist yet (e.g., old users), create default settings for them
+    if (!settings) {
+      settings = await this.prisma.notificationSettings.create({
+        data: { id: userId },
+      });
+    }
+
+    return settings;
+  }
+
+  async updateSettings(userId: string, data: any) {
+    // Upsert means: Update if it exists, Create if it doesn't.
+    return this.prisma.notificationSettings.upsert({
+      where: { id: userId },
+      update: data,
+      create: {
+        id: userId,
+        ...data,
+      },
+    });
   }
 }

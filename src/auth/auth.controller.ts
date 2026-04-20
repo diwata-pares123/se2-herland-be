@@ -3,7 +3,7 @@ import { AuthService } from './auth.service';
 import { CreateUserDto } from '../users/dto/create-user.dto';
 import { LoginDto } from '../users/dto/log-in.dto';
 import { ResetPasswordDto } from '../users/dto/new-password.dto'; 
-import { JwtAuthGuard } from './jwt-auth.guard'; // <-- SIGURADUHIN MONG NAGAWA MO YUNG GUARD FILE
+import { JwtAuthGuard } from './jwt-auth.guard'; 
 
 @Controller('auth')
 export class AuthController {
@@ -31,11 +31,23 @@ export class AuthController {
     return this.authService.resetPassword(resetDto);
   }
 
-  // --- NEW: Get Logged-in User Profile ---
+  // Get Logged-in User Profile
   @UseGuards(JwtAuthGuard)
   @Get('me')
   async getProfile(@Request() req) {
-    // Kinukuha ng guard yung token, tapos ipapasa rito yung ID (sub) nung user
     return this.authService.getProfile(req.user.sub);
+  }
+
+  // --- NEW: Change Password Route ---
+  @UseGuards(JwtAuthGuard)
+  @Post('change-password')
+  async changePassword(@Request() req, @Body() body) {
+    // req.user.sub is the user ID decoded from the access_token
+    // body contains currentPassword and newPassword from your Frontend Modal
+    return this.authService.changePassword(
+      req.user.sub, 
+      body.currentPassword, 
+      body.newPassword
+    );
   }
 }

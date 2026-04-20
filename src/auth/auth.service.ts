@@ -151,7 +151,7 @@ export class AuthService {
     return { message: 'Password reset successful' };
   }
 
-  // --- NEW: GET PROFILE (For logged-in users) ---
+  // --- 5. GET PROFILE (For logged-in users) ---
   async getProfile(userId: string) {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     
@@ -163,5 +163,32 @@ export class AuthService {
     const { password, twoFactorSecret, resetPasswordToken, resetPasswordExpires, ...safeUser } = user;
     
     return safeUser;
+  }
+
+  // --- NEW: CHANGE PASSWORD (For logged-in users inside settings) ---
+  async changePassword(userId: string, currentPass: string, newPass: string) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    // 1. I-verify kung tama ang current password na nai-type nila sa modal
+    const isPasswordValid = await bcrypt.compare(currentPass, user.password);
+    if (!isPasswordValid) {
+      // NOTE: Wag mong baguhin ang exact string na ito kasi ito yung naka-program
+      // sa frontend modal mo para i-trigger yung specific error sa current password box.
+      throw new UnauthorizedException('Incorrect current password');
+    }
+
+    // 2. I-hash ang bagong password para secure
+    const hashedNewPassword = await bcrypt.hash(newPass, 10);
+
+    // 3. I-save sa database
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { password: hashedNewPassword },
+    });
+
+    return { message: 'Password changed successfully' };
   }
 }
