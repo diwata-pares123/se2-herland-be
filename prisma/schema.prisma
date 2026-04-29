@@ -6,6 +6,7 @@ generator client {
 // 2. The Datasource
 datasource db {
   provider = "postgresql"
+  
 }
 
 // 3. Your Existing Enums
@@ -150,4 +151,19 @@ model NotificationSettings {
   emailNotifications   Boolean @default(true)
   pushNotifications    Boolean @default(true)
   smsNotifications     Boolean @default(false)
+}
+
+// ==========================================
+// --- NEW MODEL FOR INVENTORY SYSTEM ---
+// ==========================================
+
+model InventoryItem {
+  id           String   @id @default(uuid())
+  name         String   // e.g., "DETERGENT POWDER"
+  currentValue Float    @default(0) // e.g., 15
+  maxValue     Float    @default(100) // Para ma-compute ang % level sa UI
+  unit         String   // e.g., "kg Total", "L Total", "pcs Total"
+  
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 }
