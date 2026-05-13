@@ -1,10 +1,23 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { UpdateInventoryDto } from './dto/update-inventory.dto';
+import { CreateInventoryDto } from './dto/create-inventory.dto';
 
 @Injectable()
 export class InventoryService {
   constructor(private readonly prisma: PrismaService) {}
+
+  // FIXED: Dinagdagan ng 'unit' field dahil required ito sa Prisma schema mo
+  async create(dto: CreateInventoryDto) {
+    return this.prisma.inventoryItem.create({
+      data: {
+        name: dto.name,
+        currentValue: dto.currentValue,
+        maxValue: dto.maxValue,
+        unit: dto.unit, // <-- mahalaga ito para hindi mag-error ang Prisma
+      },
+    });
+  }
 
   // Kunin ang lahat at i-compute ang percentage para madali sa UI
   async findAll() {
@@ -17,7 +30,7 @@ export class InventoryService {
       return {
         ...item,
         levelPercentage: percentage,
-        isLowStock: percentage <= 20, // 20% pababa (tulad ng nasa UI na Liquid Softener)
+        isLowStock: percentage <= 20, 
       };
     });
   }
@@ -27,13 +40,11 @@ export class InventoryService {
     const item = await this.prisma.inventoryItem.findUnique({ where: { id } });
     if (!item) throw new NotFoundException('Inventory item not found');
 
-    // 1. I-update ang stock
     const updatedItem = await this.prisma.inventoryItem.update({
       where: { id },
       data: { currentValue: dto.currentValue },
     });
 
-    // 2. Mag-create ng Notification batay sa UI success toast
     await this.prisma.notification.create({
       data: {
         title: 'Inventory Restocked',
@@ -49,7 +60,6 @@ export class InventoryService {
   async restockAllLow() {
     const items = await this.prisma.inventoryItem.findMany();
     
-    // Hanapin lang ang mga 20% pababa
     const lowItems = items.filter(
       (item) => (item.currentValue / item.maxValue) * 100 <= 20
     );
@@ -58,7 +68,6 @@ export class InventoryService {
       return { message: 'No items are currently low on stock.' };
     }
 
-    // I-update lahat ng low items pabalik sa kanilag maxValue (100%)
     for (const item of lowItems) {
       await this.prisma.inventoryItem.update({
         where: { id: item.id },
@@ -66,7 +75,6 @@ export class InventoryService {
       });
     }
 
-    // Mag-create ng isang notification para sa mass restock
     await this.prisma.notification.create({
       data: {
         title: 'Mass Restock Completed',
